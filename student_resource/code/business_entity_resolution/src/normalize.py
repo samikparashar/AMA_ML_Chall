@@ -20,7 +20,12 @@ ADDRESS_ABBREVIATIONS = (
     ("terrace", "ter"), ("court", "ct"), ("apartment", "apt"),
     ("building", "bldg"),
 )
-_NON_WORD = re.compile(r"[^\w\s,]", re.UNICODE)
+# \w (Python re, Unicode mode) matches letters/digits but not combining marks, so
+# Indic dependent vowel signs (matras), virama, and anusvara/candrabindu -- essential,
+# not decorative, in Devanagari/Bengali/Gurmukhi/Gujarati/Oriya/Tamil/Telugu/Kannada/
+# Malayalam -- would otherwise be silently stripped here. Explicitly keep that whole
+# Unicode range so transliterate.py downstream still has them to work with.
+_NON_WORD = re.compile(r"[^\w\s,ऀ-ൿ]", re.UNICODE)
 _SPACE = re.compile(r"\s+")
 
 

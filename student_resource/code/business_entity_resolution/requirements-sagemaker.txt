@@ -1,15 +1,23 @@
 # Additional/replacement requirements for running --backend faiss on an AWS
 # SageMaker GPU instance (e.g. ml.g4dn, ml.g5, ml.p3 -- anything with an
-# NVIDIA GPU + CUDA). Install this on top of requirements.txt, minus torch
-# (not needed for the faiss backend; leave it out unless something else in
-# your SageMaker environment needs it, to avoid the OpenMP-conflict class of
-# bug we hit locally between torch and lightgbm -- see blocking_faiss.py's
-# module docstring and the `import lightgbm` ordering guard at its top).
+# NVIDIA GPU + CUDA). Install this on top of requirements.txt.
+#
+# UPDATE: torch is now a real (not optional) dependency of blocking_faiss.py,
+# transitively via src/transliterate.py (the GPU-batched transliteration
+# stage uses torch tensor ops so the same module works on both the local
+# MPS backend and this CUDA backend). Install a CUDA-matched torch build
+# here rather than leaving it out. The torch/lightgbm OpenMP conflict
+# documented in blocking_faiss.py's module docstring (and the `import
+# lightgbm` first-import ordering guard at the top of that file and of
+# transliterate.py's importer) still applies -- keep that ordering intact
+# instead of removing torch.
 #
 # faiss-gpu wheels are CUDA-version-specific; check what CUDA version your
 # SageMaker instance/image has (`nvidia-smi` on the instance) before picking
 # a pin. As of writing, the community-maintained faiss-gpu wheels on PyPI
 # target CUDA 11/12 builds -- confirm compatibility, or install via conda
 # (`conda install -c pytorch -c nvidia faiss-gpu`) if the pip wheel doesn't
-# match your instance's CUDA version.
+# match your instance's CUDA version. Pick a matching torch build (e.g. the
+# CUDA 12.1 wheel index) rather than the default CPU-only torch wheel.
 faiss-gpu
+torch

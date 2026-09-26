@@ -30,6 +30,8 @@ from scipy import sparse
 from sklearn.feature_extraction.text import HashingVectorizer
 from sklearn.preprocessing import normalize as l2_normalize
 
+from .transliterate import add_translit_columns
+
 
 @dataclass
 class FaissBlockingConfig:
@@ -52,8 +54,9 @@ class FaissBlockingIndex:
     def __init__(self, corpus: pd.DataFrame, config: FaissBlockingConfig | None = None):
         self.config = config or FaissBlockingConfig()
         self.corpus = corpus.reset_index(drop=True).copy()
+        self.corpus = add_translit_columns(self.corpus)
         self.corpus["composite_key"] = self.corpus.apply(
-            lambda row: f"{row.country}|{row.phonetic_key}|{row.city_token}".lower(), axis=1
+            lambda row: f"{row.country}|{row.phonetic_key_translit}|{row.city_token_translit}".lower(), axis=1
         )
         self.vectorizer = HashingVectorizer(
             analyzer="char_wb", ngram_range=(3, 5), n_features=self.config.n_features,
@@ -63,13 +66,13 @@ class FaissBlockingIndex:
             analyzer="char_wb", ngram_range=(3, 5), n_features=self.config.ann_dim,
             alternate_sign=True, norm=None, lowercase=False,
         )
-        text = self.corpus["business_name_norm"] + " " + self.corpus["business_address_norm"]
+        text = self.corpus["business_name_translit"] + " " + self.corpus["business_address_translit"]
         raw = self.vectorizer.transform(text)
         self._fit_sparse_transform(raw)
         self._build_faiss_index(text)
         self.composite_groups = self.corpus.groupby("composite_key").indices
         self.exact_groups = self.corpus.groupby(
-            ["country", "business_name_norm", "city_token"], dropna=False
+            ["country", "business_name_translit", "city_token_translit"], dropna=False
         ).indices
 
     def _fit_sparse_transform(self, raw: sparse.csr_matrix) -> None:
@@ -87,7 +90,8 @@ class FaissBlockingIndex:
         self.idf = idf
 
     def transform(self, frame: pd.DataFrame) -> tuple[sparse.csr_matrix, np.ndarray]:
-        text = frame["business_name_norm"] + " " + frame["business_address_norm"]
+        frame = add_translit_columns(frame)
+        text = frame["business_name_translit"] + " " + frame["business_address_translit"]
         matrix = self.vectorizer.transform(text).tocsr(copy=False)
         matrix.data *= np.take(self.idf, matrix.indices).astype(np.float32)
         norms = np.sqrt(np.asarray(matrix.multiply(matrix).sum(axis=1)).ravel())
@@ -127,8 +131,10 @@ class FaissBlockingIndex:
         self.n_clusters = n_clusters
 
     def _composite_candidates(self, query: pd.DataFrame) -> dict[int, dict[int, float]]:
-        left = query[["country", "phonetic_key", "city_token"]].copy()
-        left["composite_key"] = (left["country"] + "|" + left["phonetic_key"] + "|" + left["city_token"]).str.lower()
+        left = query[["country", "phonetic_key_translit", "city_token_translit"]].copy()
+        left["composite_key"] = (
+            left["country"] + "|" + left["phonetic_key_translit"] + "|" + left["city_token_translit"]
+        ).str.lower()
         left["query_pos"] = np.arange(len(left))
         right = self.corpus[["composite_key"]].reset_index(names="corpus_pos")
         merged = left.merge(right, on="composite_key", how="inner")
@@ -140,10 +146,10 @@ class FaissBlockingIndex:
         """Add exact normalized-name/city matches without broad country buckets."""
         result = {}
         for query_pos, row in query.reset_index(drop=True).iterrows():
-            if not row.business_name_norm or not row.city_token:
+            if not row.business_name_translit or not row.city_token_translit:
                 continue
             corpus_positions = self.exact_groups.get(
-                (row.country, row.business_name_norm, row.city_token), ()
+                (row.country, row.business_name_translit, row.city_token_translit), ()
             )
             if len(corpus_positions) <= self.config.max_candidates * 2:
                 result[query_pos] = {
@@ -154,10 +160,11 @@ class FaissBlockingIndex:
 
     def candidates(self, query: pd.DataFrame) -> pd.DataFrame:
         query = query.reset_index(drop=True)
+        query = add_translit_columns(query)
         composite = self._composite_candidates(query)
         exact = self._exact_candidates(query)
         fine_matrix, query_norms = self.transform(query)
-        text = query["business_name_norm"] + " " + query["business_address_norm"]
+        text = query["business_name_translit"] + " " + query["business_address_translit"]
         coarse = self._coarse_vectors(text)
         k = min(self.config.ann_candidates, self.n_corpus)
         _, labels = self.index.search(coarse, k)  # single native call for the whole batch
