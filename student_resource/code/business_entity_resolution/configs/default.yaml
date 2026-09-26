@@ -1,7 +1,11 @@
 batch_size: 10000
 max_candidates: 50
-tfidf_top_k: 50
-n_features: 262144
+n_features: 1048576
 max_df_frac: 0.005
-similarity_chunk: 500
+ann_dim: 256
+ann_candidates: 300
+hnsw_m: 32
+hnsw_ef_construction: 200
+hnsw_ef_search: 128
+hybrid_alpha: 0.7
 threshold: 0.68

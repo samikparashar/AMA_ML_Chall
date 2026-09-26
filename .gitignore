@@ -8,3 +8,10 @@ student_resource/**/__pycache__/
 student_resource/.ipynb_checkpoints/
 student_resource/NOTEBOOKS/.ipynb_checkpoints/
 **/.DS_Store
+/.venv
+/.claude
+/.idea
+.mcp.json
+/handoffs
+
+
