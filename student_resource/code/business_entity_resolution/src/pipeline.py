@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pandas as pd
 
-from .blocking import BlockingConfig, BlockingIndex, build_corpus
 from .data_io import load_full_tsv, write_id_lists
 from .evaluate import blocking_report, load_ground_truth
 from .features import build_pair_features
@@ -23,13 +22,22 @@ def stage1(args):
     print(frame[["business_name", "business_name_norm", "business_address", "business_address_norm", "city_token", "phonetic_key"]].to_string(index=False))
 
 
+def _backend(name: str):
+    if name == "faiss":
+        from .blocking_faiss import FaissBlockingConfig, FaissBlockingIndex, build_corpus
+        return FaissBlockingConfig, FaissBlockingIndex, build_corpus
+    from .blocking import BlockingConfig, BlockingIndex, build_corpus  # imports lightgbm before torch internally
+    return BlockingConfig, BlockingIndex, build_corpus
+
+
 def _run_block(args, split: str):
     s1_path, s2_path, s3_path = _paths(Path(args.root), split)
     s1, s2, s3 = (load_full_tsv(path) for path in (s1_path, s2_path, s3_path))
-    values = {key: getattr(args, key) for key in BlockingConfig.__annotations__ if hasattr(args, key)}
-    config = BlockingConfig(**values)
+    config_cls, index_cls, build_corpus = _backend(args.backend)
+    values = {key: getattr(args, key) for key in config_cls.__annotations__ if hasattr(args, key)}
+    config = config_cls(**values)
     corpus = build_corpus(s2, s3)
-    index = BlockingIndex(corpus, config)
+    index = index_cls(corpus, config)
     pieces = []
     for start in range(0, len(s1), config.batch_size):
         query = s1.iloc[start:start + config.batch_size]
@@ -79,6 +87,9 @@ def stage4(args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("stage", choices=["stage1", "stage2", "stage3", "stage4"])
+    parser.add_argument("--backend", default="torch", choices=["torch", "faiss"],
+                        help="torch: MPS-accelerated IVF, for this Mac. faiss: FAISS IVF, "
+                             "auto-detects and uses CUDA GPU when available (SageMaker).")
     parser.add_argument("--root", default=".")
     parser.add_argument("--source1")
     parser.add_argument("--rows", type=int, default=20)
@@ -91,9 +102,9 @@ def main():
     parser.add_argument("--max-df-frac", dest="max_df_frac", type=float, default=0.005)
     parser.add_argument("--ann-dim", dest="ann_dim", type=int, default=256)
     parser.add_argument("--ann-candidates", dest="ann_candidates", type=int, default=300)
-    parser.add_argument("--hnsw-m", dest="hnsw_m", type=int, default=32)
-    parser.add_argument("--hnsw-ef-construction", dest="hnsw_ef_construction", type=int, default=200)
-    parser.add_argument("--hnsw-ef-search", dest="hnsw_ef_search", type=int, default=128)
+    parser.add_argument("--ivf-n-clusters", dest="ivf_n_clusters", type=int, default=2048)
+    parser.add_argument("--ivf-n-probe", dest="ivf_n_probe", type=int, default=8)
+    parser.add_argument("--ivf-sample-size", dest="ivf_sample_size", type=int, default=300_000)
     parser.add_argument("--hybrid-alpha", dest="hybrid_alpha", type=float, default=0.7)
     parser.add_argument("--threshold", type=float, default=0.68)
     args = parser.parse_args()

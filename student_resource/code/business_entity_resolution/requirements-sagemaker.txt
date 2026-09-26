@@ -1,0 +1,15 @@
+# Additional/replacement requirements for running --backend faiss on an AWS
+# SageMaker GPU instance (e.g. ml.g4dn, ml.g5, ml.p3 -- anything with an
+# NVIDIA GPU + CUDA). Install this on top of requirements.txt, minus torch
+# (not needed for the faiss backend; leave it out unless something else in
+# your SageMaker environment needs it, to avoid the OpenMP-conflict class of
+# bug we hit locally between torch and lightgbm -- see blocking_faiss.py's
+# module docstring and the `import lightgbm` ordering guard at its top).
+#
+# faiss-gpu wheels are CUDA-version-specific; check what CUDA version your
+# SageMaker instance/image has (`nvidia-smi` on the instance) before picking
+# a pin. As of writing, the community-maintained faiss-gpu wheels on PyPI
+# target CUDA 11/12 builds -- confirm compatibility, or install via conda
+# (`conda install -c pytorch -c nvidia faiss-gpu`) if the pip wheel doesn't
+# match your instance's CUDA version.
+faiss-gpu
