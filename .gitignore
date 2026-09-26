@@ -1,0 +1,10 @@
+# Competition data and generated submissions
+student_resource/dataset/
+student_resource/output/
+
+# Local environments and caches
+student_resource/.venv/
+student_resource/**/__pycache__/
+student_resource/.ipynb_checkpoints/
+student_resource/NOTEBOOKS/.ipynb_checkpoints/
+**/.DS_Store

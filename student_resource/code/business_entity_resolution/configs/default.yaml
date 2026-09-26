@@ -1,0 +1,7 @@
+batch_size: 10000
+max_candidates: 50
+tfidf_top_k: 50
+n_features: 262144
+max_df_frac: 0.005
+similarity_chunk: 500
+threshold: 0.68
