@@ -4,8 +4,8 @@ n_features: 1048576
 max_df_frac: 0.005
 ann_dim: 256
 ann_candidates: 300
-hnsw_m: 32
-hnsw_ef_construction: 200
-hnsw_ef_search: 128
+ivf_n_clusters: 2048
+ivf_n_probe: 4
+ivf_sample_size: 300000
 hybrid_alpha: 0.7
 threshold: 0.68

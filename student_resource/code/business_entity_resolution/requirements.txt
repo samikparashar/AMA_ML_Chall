@@ -6,4 +6,9 @@ lightgbm==4.6.0
 rapidfuzz==3.14.1
 jellyfish==1.2.1
 pyyaml==6.0.2
-hnswlib==0.8.0
+
+# --backend torch (default): local Mac development, Metal/MPS-accelerated blocking.
+torch==2.14.0
+
+# --backend faiss: SageMaker GPU instance only. See requirements-sagemaker.txt --
+# faiss-gpu needs a CUDA toolkit present and will not install on this Mac.
