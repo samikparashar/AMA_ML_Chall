@@ -72,6 +72,7 @@ def stage3(args):
     model, columns, valid = train_classifier(features)
     threshold, score = sweep_threshold(model, columns, valid, truth)
     print(f"best threshold={threshold:.2f}, validation macro F_0.5={score:.4f}")
+    save_model(model, columns, threshold, args.model_dir)
 
 
 def stage4(args):
