@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from .data_io import write_id_lists
+from .data_io import build_candidate_map, write_id_lists
 from .evaluate import f_beta_macro
 
 
@@ -76,9 +76,8 @@ def build_outputs(s1: pd.DataFrame, corpus: pd.DataFrame, candidates: pd.DataFra
         # a native lgb.Booster (e.g. from load_model) -- binary objective predict() is P(positive) directly
         scored["probability"] = model.predict(scored[columns])
     selected = scored[scored.probability >= threshold]
-    candidate_map, match_map = {}, {}
-    for block in candidates.itertuples(index=False):
-        candidate_map.setdefault(s1.iloc[int(block.query_pos)].entity_id, set()).add(corpus.iloc[int(block.corpus_pos)].entity_id)
+    candidate_map = build_candidate_map(s1, corpus, candidates)
+    match_map = {}
     for row in selected.itertuples(index=False):
         match_map.setdefault(row.s1_id, set()).add(row.match_id)
     ids = s1.entity_id.tolist()

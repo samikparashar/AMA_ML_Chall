@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .data_io import load_full_tsv, write_id_lists
+from .data_io import build_candidate_map, load_full_tsv, write_id_lists
 from .evaluate import blocking_report, load_ground_truth
 from .features import build_pair_features
 from .matching import build_outputs, label_pairs, save_model, sweep_threshold, train_classifier
@@ -55,9 +55,7 @@ def stage2(args):
         print(blocking_report(s1, corpus, candidates, load_ground_truth(args.ground_truth)))
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
-    mapping = {}
-    for row in candidates.itertuples(index=False):
-        mapping.setdefault(s1.iloc[int(row.query_pos)].entity_id, set()).add(corpus.iloc[int(row.corpus_pos)].entity_id)
+    mapping = build_candidate_map(s1, corpus, candidates)
     write_id_lists(output / "candidate_pairs.tsv", s1.entity_id, mapping, "candidate_entity_ids")
 
 
