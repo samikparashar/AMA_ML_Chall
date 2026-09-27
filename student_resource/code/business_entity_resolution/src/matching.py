@@ -44,13 +44,37 @@ def sweep_threshold(model, columns: list[str], valid: pd.DataFrame, truth: dict[
     return best
 
 
+def save_model(model, columns: list[str], threshold: float, model_dir: str) -> None:
+    import json
+    import os
+
+    os.makedirs(model_dir, exist_ok=True)
+    model.booster_.save_model(f"{model_dir}/model.txt")
+    with open(f"{model_dir}/model_meta.json", "w") as f:
+        json.dump({"columns": columns, "threshold": threshold}, f)
+
+
+def load_model(model_dir: str):
+    import json
+
+    import lightgbm as lgb
+    booster = lgb.Booster(model_file=f"{model_dir}/model.txt")
+    with open(f"{model_dir}/model_meta.json") as f:
+        meta = json.load(f)
+    return booster, meta["columns"], meta["threshold"]
+
+
 def build_outputs(s1: pd.DataFrame, corpus: pd.DataFrame, candidates: pd.DataFrame, features: pd.DataFrame,
                   model, columns: list[str], threshold: float, output_dir: str) -> None:
     import os
 
     os.makedirs(output_dir, exist_ok=True)
     scored = features.copy()
-    scored["probability"] = model.predict_proba(scored[columns])[:, 1]
+    if hasattr(model, "predict_proba"):
+        scored["probability"] = model.predict_proba(scored[columns])[:, 1]
+    else:
+        # a native lgb.Booster (e.g. from load_model) -- binary objective predict() is P(positive) directly
+        scored["probability"] = model.predict(scored[columns])
     selected = scored[scored.probability >= threshold]
     candidate_map, match_map = {}, {}
     for block in candidates.itertuples(index=False):

@@ -25,6 +25,11 @@ def main():
         argv.append(f"--{key.replace('_', '-')}")
         argv.append(str(value))
 
+    # SageMaker's dedicated model-artifact dir -- gets auto-tarred to model.tar.gz in
+    # the job's S3 output_path. Only stage4 (matching.py's save_model) reads --model-dir.
+    if "model_dir" not in hps and "SM_MODEL_DIR" in os.environ:
+        argv += ["--model-dir", os.environ["SM_MODEL_DIR"]]
+
     sys.argv = ["pipeline.py"] + argv
     print(f"[sagemaker_entry] invoking: {sys.argv}", flush=True)
 

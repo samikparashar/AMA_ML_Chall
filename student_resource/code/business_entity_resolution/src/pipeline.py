@@ -8,7 +8,7 @@ import pandas as pd
 from .data_io import load_full_tsv, write_id_lists
 from .evaluate import blocking_report, load_ground_truth
 from .features import build_pair_features
-from .matching import build_outputs, label_pairs, sweep_threshold, train_classifier
+from .matching import build_outputs, label_pairs, save_model, sweep_threshold, train_classifier
 
 
 def _paths(root: Path, split: str):
@@ -78,6 +78,7 @@ def stage4(args):
     threshold, score = sweep_threshold(validation_model, columns, valid, truth)
     model, columns, _ = train_classifier(train_features, validation_fraction=0.0)
     print(f"selected threshold={threshold:.2f}, validation macro F_0.5={score:.4f}")
+    save_model(model, columns, threshold, args.model_dir)
     del train_features, train_candidates, train_corpus, train_s1, validation_model, valid
     s1, corpus, candidates = _run_block(args, "test")
     test_features = build_pair_features(s1, corpus, candidates)
@@ -96,6 +97,7 @@ def main():
     parser.add_argument("--split", default="train", choices=["train", "test"])
     parser.add_argument("--ground-truth")
     parser.add_argument("--output", default="output")
+    parser.add_argument("--model-dir", dest="model_dir", default="model")
     parser.add_argument("--batch-size", dest="batch_size", type=int, default=10000)
     parser.add_argument("--max-candidates", dest="max_candidates", type=int, default=50)
     parser.add_argument("--n-features", dest="n_features", type=int, default=2**20)
