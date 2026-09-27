@@ -14,3 +14,4 @@ student_resource/NOTEBOOKS/.ipynb_checkpoints/
 .mcp.json
 /handoffs
 ml-challenge_accessKeys.csv
+/sagemaker_ops
