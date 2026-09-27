@@ -61,6 +61,20 @@ _BLOCK_STARTS = (0x0900, 0x0980, 0x0A00, 0x0A80, 0x0B00, 0x0B80, 0x0C00, 0x0C80,
 
 _TABLE_CACHE: dict[str, tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = {}
 
+# transliterate_series's batched GPU pass allocates several [total_characters, MAX_OUT]
+# int64 tensors -- at 500k-row medium-scale validation this fit comfortably, but at
+# full scale (~10.3M corpus rows) the unchunked whole-column call OOM'd a 22GB A10G
+# GPU (confirmed via a real failed SageMaker job, 2026-09-27: "Tried to allocate
+# 7.20 GiB... 18.51 GiB memory in use"). This caps a single GPU pass's total character
+# count to keep peak tensor size in the same ballpark as the already-proven-safe
+# medium-scale run, regardless of how many rows that represents for a given column's
+# average string length. Chunking is exact, not approximate: the algorithm is already
+# per-row-independent (row_end_t masks off any cross-row bleed at each row's last
+# character), so splitting on row boundaries and concatenating results is guaranteed
+# identical to running the whole column in one pass -- verified directly, see
+# smoke_test_e2e.py's chunking-equivalence check.
+_MAX_CHARS_PER_CHUNK = 20_000_000
+
 
 def _default_device() -> torch.device:
     if torch.cuda.is_available():
@@ -118,13 +132,46 @@ def _pack_codepoints(strings: list[str]) -> tuple[np.ndarray, np.ndarray]:
     return flat, offsets
 
 
+def _chunk_bounds(lengths: list[int], max_chars: int) -> list[tuple[int, int]]:
+    """Split row indices into contiguous [start, stop) ranges, each holding as many
+    whole rows as fit under max_chars total characters (never splitting a row's
+    characters across two chunks, which is what keeps the row_end_t masking in
+    _transliterate_batch correct per chunk)."""
+    bounds = []
+    start = 0
+    acc = 0
+    for i, length in enumerate(lengths):
+        if acc + length > max_chars and i > start:
+            bounds.append((start, i))
+            start = i
+            acc = 0
+        acc += length
+    bounds.append((start, len(lengths)))
+    return bounds
+
+
 def transliterate_series(series: pd.Series, device: torch.device | None = None) -> pd.Series:
-    """Latinize Indic-script characters in a text series via one batched GPU pass."""
+    """Latinize Indic-script characters in a text series via batched GPU passes,
+    chunked to bound peak GPU memory regardless of the series' total size."""
     device = device or _default_device()
     strings = series.fillna("").astype(str).tolist()
+    if not strings:
+        return series.copy()
+    lengths = [len(s) for s in strings]
+    bounds = _chunk_bounds(lengths, _MAX_CHARS_PER_CHUNK)
+    if len(bounds) == 1:
+        return pd.Series(_transliterate_batch(strings, device), index=series.index)
+    flat_results = [item for start, stop in bounds for item in _transliterate_batch(strings[start:stop], device)]
+    return pd.Series(flat_results, index=series.index)
+
+
+def _transliterate_batch(strings: list[str], device: torch.device) -> list[str]:
+    """One batched GPU pass over a single chunk of rows -- the original (pre-chunking)
+    transliterate_series body, unchanged, just operating on a plain list instead of a
+    Series so transliterate_series can call it once per chunk."""
     flat_cp, offsets = _pack_codepoints(strings)
     if flat_cp.size == 0:
-        return series.copy()
+        return list(strings)
 
     table, is_consonant, is_vowel_carrier = _get_table(device)
 
@@ -174,7 +221,7 @@ def transliterate_series(series: pd.Series, device: torch.device | None = None) 
     row_out_offsets = cum_out_len[offsets]
 
     result = [joined[row_out_offsets[i] : row_out_offsets[i + 1]] for i in range(len(strings))]
-    return pd.Series(result, index=series.index)
+    return result
 
 
 def add_translit_columns(frame: pd.DataFrame, device: torch.device | None = None) -> pd.DataFrame:
