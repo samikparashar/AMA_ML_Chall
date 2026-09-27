@@ -6,6 +6,7 @@ lightgbm==4.6.0
 rapidfuzz==3.14.1
 jellyfish==1.2.1
 pyyaml==6.0.2
+Unidecode==1.4.0
 
 # --backend torch (default): local Mac development, Metal/MPS-accelerated blocking.
 torch==2.14.0

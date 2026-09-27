@@ -12,12 +12,20 @@
 # transliterate.py's importer) still applies -- keep that ordering intact
 # instead of removing torch.
 #
-# faiss-gpu wheels are CUDA-version-specific; check what CUDA version your
-# SageMaker instance/image has (`nvidia-smi` on the instance) before picking
-# a pin. As of writing, the community-maintained faiss-gpu wheels on PyPI
-# target CUDA 11/12 builds -- confirm compatibility, or install via conda
-# (`conda install -c pytorch -c nvidia faiss-gpu`) if the pip wheel doesn't
-# match your instance's CUDA version. Pick a matching torch build (e.g. the
-# CUDA 12.1 wheel index) rather than the default CPU-only torch wheel.
+# faiss-gpu (PyPI, official Meta/FAIR package as of 1.15.1) bundles its own
+# CUDA 12.x runtime via `nvidia-cublas-cu12<13,>=12.6` etc -- confirmed via
+# PyPI metadata, no system CUDA toolkit or special index needed.
+#
+# CRITICAL PIN: torch>=2.10 switched to bundling CUDA 13 runtime libs
+# (unsuffixed `nvidia-cublas`, not `nvidia-cublas-cu12`). Installing that
+# alongside faiss-gpu's CUDA 12 requirement puts two incompatible CUDA major
+# versions' shared libraries on disk at once; faiss's dlopen of libcublas.so.12
+# then resolves to a mismatched cublasLt and fails with
+# `undefined symbol: cublasLtGetEnvironmentMode` at import time. Confirmed by
+# an actual failed SageMaker run (ml.g5.2xlarge, torch==2.14.0) on 2026-09-27.
+# torch==2.9.0 is the newest release still on the CUDA 12 line
+# (nvidia-cublas-cu12==12.8.4.1, satisfies faiss-gpu's <13,>=12.6 constraint) --
+# do not bump torch here past 2.9.x without re-checking both packages' CUDA
+# major version pins.
 faiss-gpu
-torch
+torch==2.9.0
