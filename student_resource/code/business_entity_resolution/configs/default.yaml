@@ -1,11 +1,11 @@
 batch_size: 10000
-max_candidates: 50
+max_candidates: 300
 n_features: 1048576
 max_df_frac: 0.005
 ann_dim: 256
 ann_candidates: 300
 ivf_n_clusters: 2048
-ivf_n_probe: 4
+ivf_n_probe: 64
 ivf_sample_size: 300000
 hybrid_alpha: 0.7
 threshold: 0.68

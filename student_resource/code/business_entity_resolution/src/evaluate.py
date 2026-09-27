@@ -11,10 +11,17 @@ def load_ground_truth(path: str) -> dict[str, set[str]]:
 
 
 def blocking_report(queries: pd.DataFrame, corpus: pd.DataFrame, candidates: pd.DataFrame, truth: dict[str, set[str]], sample_misses: int = 5) -> dict:
-    candidate_sets = {}
-    for row in candidates.itertuples(index=False):
-        s1 = queries.iloc[int(row.query_pos)].entity_id
-        candidate_sets.setdefault(s1, set()).add(corpus.iloc[int(row.corpus_pos)].entity_id)
+    # vectorized: map positional query_pos/corpus_pos -> entity_id via numpy fancy indexing,
+    # then let pandas' groupby do the set-building in C rather than looping .iloc per row
+    # (that loop was O(len(candidates)) with real per-call .iloc overhead -- up to millions
+    # of rows at scale; this is O(len(candidates)) numpy indexing + O(num_queries) grouping).
+    query_ids = queries.entity_id.to_numpy()
+    corpus_ids = corpus.entity_id.to_numpy()
+    pairs = pd.DataFrame({
+        "s1_id": query_ids[candidates.query_pos.to_numpy()],
+        "candidate_id": corpus_ids[candidates.corpus_pos.to_numpy()],
+    })
+    candidate_sets = pairs.groupby("s1_id")["candidate_id"].apply(set).to_dict() if len(pairs) else {}
     total = found_count = 0
     misses = []
     for row in queries.itertuples():

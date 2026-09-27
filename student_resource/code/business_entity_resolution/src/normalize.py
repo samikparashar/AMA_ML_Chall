@@ -27,10 +27,23 @@ ADDRESS_ABBREVIATIONS = (
 # Unicode range so transliterate.py downstream still has them to work with.
 _NON_WORD = re.compile(r"[^\w\s,ऀ-ൿ]", re.UNICODE)
 _SPACE = re.compile(r"\s+")
+# Latin combining-diacritic block only (U+0300-U+036F) -- does not overlap the Indic
+# script range above, so this can't interfere with matra/virama preservation there.
+# NFKC alone does NOT fold accents (e.g. "o" + acute stays "ó"), so without this,
+# "Thomas" vs "Thómas" normalize to different strings and different phonetic_key
+# branches (the non-ASCII fallback vs jellyfish.metaphone) -- a real recall gap that
+# matters more with the test set's France rows (accented Latin names), confirmed via
+# a real missed-match pair found in medium-scale validation on 2026-09-27.
+_COMBINING_DIACRITIC = re.compile(r"[̀-ͯ]")
+
+
+def _fold_latin_accents(value: str) -> str:
+    return _COMBINING_DIACRITIC.sub("", unicodedata.normalize("NFKD", value))
 
 
 def _base(text: object, keep_commas: bool = False) -> str:
     value = "" if text is None else str(text)
+    value = _fold_latin_accents(value)
     value = unicodedata.normalize("NFKC", value).lower().replace("&", " and ")
     value = _NON_WORD.sub("", value)
     value = _SPACE.sub(" ", value).strip(" ,")
