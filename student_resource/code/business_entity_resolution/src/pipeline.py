@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .data_io import build_candidate_map, load_full_tsv, write_id_lists
+from .data_io import build_candidate_map, load_block_cache, load_full_tsv, save_block_cache, write_id_lists
 from .evaluate import blocking_report, load_ground_truth
 from .features import build_pair_features
 from .matching import build_outputs, label_pairs, save_model, sweep_threshold, train_classifier
@@ -31,10 +31,15 @@ def _backend(name: str):
 
 
 def _run_block(args, split: str):
-    s1_path, s2_path, s3_path = _paths(Path(args.root), split)
-    s1, s2, s3 = (load_full_tsv(path) for path in (s1_path, s2_path, s3_path))
     config_cls, index_cls, build_corpus = _backend(args.backend)
     values = {key: getattr(args, key) for key in config_cls.__annotations__ if hasattr(args, key)}
+    cache_dir = Path(args.model_dir) / "candidates_cache" / f"{split}_{args.backend}"
+    cached = load_block_cache(cache_dir, values)
+    if cached is not None:
+        print(f"loaded cached blocking result from {cache_dir} (skipped re-clustering/re-blocking)")
+        return cached
+    s1_path, s2_path, s3_path = _paths(Path(args.root), split)
+    s1, s2, s3 = (load_full_tsv(path) for path in (s1_path, s2_path, s3_path))
     config = config_cls(**values)
     corpus = build_corpus(s2, s3)
     index = index_cls(corpus, config)
@@ -46,6 +51,7 @@ def _run_block(args, split: str):
         pieces.append(piece)
         print(f"blocked {min(start + config.batch_size, len(s1))}/{len(s1)}")
     candidates = pd.concat(pieces, ignore_index=True) if pieces else pd.DataFrame()
+    save_block_cache(cache_dir, s1, corpus, candidates, values)
     return s1, corpus, candidates
 
 

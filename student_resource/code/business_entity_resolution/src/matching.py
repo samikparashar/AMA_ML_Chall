@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 
 from .data_io import build_candidate_map, write_id_lists
-from .evaluate import f_beta_macro
 
 
 def label_pairs(features: pd.DataFrame, truth: dict[str, set[str]]) -> pd.DataFrame:
@@ -31,14 +30,34 @@ def train_classifier(features: pd.DataFrame, validation_fraction: float = 0.2, s
     return model, columns, valid
 
 
-def sweep_threshold(model, columns: list[str], valid: pd.DataFrame, truth: dict[str, set[str]]) -> tuple[float, float]:
+def sweep_threshold(model, columns: list[str], valid: pd.DataFrame, truth: dict[str, set[str]], beta: float = 0.5) -> tuple[float, float]:
+    # f_beta_macro's groupby("s1_id") only depends on `valid`, not on the threshold --
+    # the old code rebuilt it from scratch (full df copy + groupby + per-group dict)
+    # on every one of the 99 threshold steps. Confirmed as a real bottleneck via an
+    # actual stuck SageMaker run (2026-09-27, stopped after 34+ min with no result on
+    # a validation set with up to ~1M+ rows). Group once here instead; only the
+    # per-threshold predicted-set comparison needs to repeat.
     scored = valid.copy()
     scored["probability"] = model.predict_proba(scored[columns])[:, 1]
+    all_s1_ids = list(valid.attrs.get("s1_ids")) if valid.attrs.get("s1_ids") is not None else scored.s1_id.unique().tolist()
+    grouped = {
+        s1_id: (group.match_id.to_numpy(), group.probability.to_numpy())
+        for s1_id, group in scored.groupby("s1_id")
+    }
+
     best = (0.5, -1.0)
     for threshold in np.arange(0.01, 0.991, 0.01):
-        candidate = scored.copy()
-        candidate["probability"] = (candidate["probability"] >= threshold).astype(float)
-        score = f_beta_macro(candidate, truth, all_s1_ids=valid.attrs.get("s1_ids"))
+        scores = []
+        for s1_id in all_s1_ids:
+            entry = grouped.get(s1_id)
+            predicted = set(entry[0][entry[1] >= threshold]) if entry is not None else set()
+            expected = truth.get(s1_id, set())
+            tp = len(predicted & expected)
+            precision = tp / len(predicted) if predicted else (1.0 if not expected else 0.0)
+            recall = tp / len(expected) if expected else (1.0 if not predicted else 0.0)
+            denominator = beta * beta * precision + recall
+            scores.append((1 + beta * beta) * precision * recall / denominator if denominator else 0.0)
+        score = float(np.mean(scores)) if scores else 0.0
         if score > best[1]:
             best = (float(threshold), score)
     return best
