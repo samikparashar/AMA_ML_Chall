@@ -17,39 +17,37 @@
 *Key insights discovered during EDA — noise patterns, address variations, missing fields, etc.*
 
 ### 2.2 Solution Strategy
-*Outline your high-level approach.*
 
-**Approach Type:** [Blocking + Classifier / End-to-End / Graph-Based / Hybrid, etc]  
-**Core Innovation:** [Brief description of your main technical contribution]
+**Approach Type:** Blocking + Classifier.
+**Core Innovation:** A two-stage blocking pipeline (coarse ANN/IVF shortlist, then a precise cosine + magnitude-similarity rerank) with a dedicated GPU-batched transliteration stage so cross-script true matches (e.g. Latin ↔ Devanagari/Tamil/Gujarati/Kannada/Bengali/Telugu/Malayalam/Oriya/Gurmukhi business names) share real n-gram overlap instead of zero. Two interchangeable backends implement the identical blocking interface: a local Metal/MPS (torch) backend for development, and a CUDA (FAISS) backend for production-scale/SageMaker runs.
 
 ---
 
 ## 3. Candidate Generation (Blocking)
-*Describe how you reduced the comparison space to a manageable candidate set.*
 
-- **Blocking keys used:** [e.g., PIN code, phonetic name encoding, TF-IDF, etc.]
-- **Candidate pairs generated:** [total]
-- **How you ensured true matches were not lost:**
+- **Blocking keys used:** composite-key exact match, exact name/city match, hashed character n-gram (char_wb) TF-IDF cosine similarity, IVF-clustered approximate nearest-neighbor search for scale.
+- **Candidate pairs generated:** [pending full-scale run — see `handoffs/` for medium-scale validation numbers]
+- **How true matches were not lost:** a dedicated Latin accent-folding fix (NFKD decompose + strip combining diacritic marks, scoped to not interfere with Indic script handling) and the transliteration stage above were added specifically after real validation runs surfaced true matches that raw character-hashing alone could not find. Blocking recall on a medium-scale (non-final) validation run reached 85.46% after tuning `max_candidates`/`ivf_n_probe`; full-scale recall has not yet been measured.
 
 ---
 
 ## 4. Matching Model
 
 **Features used:**
-- Name features: [e.g., Jaccard, Levenshtein, phonetic encoding]
-- Address features: [e.g., token overlap, edit distance, PIN code matching]
-- Other: []
+- Name features: exact match, token-sort/token-set/partial/plain rapidfuzz ratios, phonetic-key exact match, name length delta.
+- Address features: token-sort/partial/plain rapidfuzz ratios, digit-set Jaccard (numeric tokens in the address, e.g. PIN/ZIP codes and building numbers), address length delta.
+- Other: country exact match, city-token exact match, and the blocking stage's own scores (hashed TF-IDF cosine, composite-key match flag, exact-block-match flag) fed back in as classifier features.
 
-**Model type:** [e.g., XGBoost, Siamese Network, Transformer, etc.]  
-**Threshold selection method:** [e.g., F_0.5 optimization on validation set]
+**Model type:** LightGBM binary classifier (gradient-boosted decision trees), MIT-licensed, well under the 8B-parameter constraint.
+**Threshold selection method:** linear sweep (0.01 steps) directly optimizing macro F₀.₅ on an S1-group-aware held-out validation split (no S1 group leaked across train/validation).
 
 ---
 
 ## 5. Results & Error Analysis
 
-- **F_0.5 Score (macro):** [your best validation score]
-- **Common false positives (wrong merges):** [brief description]
-- **Common false negatives (missed matches):** [brief description]
+- **F_0.5 Score (macro):** [pending full-scale run — a medium-scale (20k-query, 500k-corpus, not the full ~2.2M/~10.3M dataset) validation run reached 0.9021; this is not the final submission number and should not be reported as such]
+- **Common false positives (wrong merges):** [pending full-scale error analysis]
+- **Common false negatives (missed matches):** two real patterns identified during medium-scale validation: (1) genuinely noisy source data (e.g. one true match had a completely empty address field; another had an apparent digit-entry typo in the street number) — not fixable via blocking/model changes; (2) domain-name-style business name variants (e.g. `"primemoney.com"` vs `"Prime Money"`) not yet specifically addressed.
 
 ---
 
